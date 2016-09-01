@@ -441,6 +441,12 @@ public interface UndertowMessages {
     @Message(id = 137, value = "Could not find the datasource called %s")
     IllegalArgumentException datasourceNotFound(String ds);
 
+    @Message(id = 138, value = "Server not started")
+    IllegalStateException serverNotStarted();
+
     @Message(id = 139, value = "Exchange already complete")
     IllegalStateException exchangeAlreadyComplete();
+
+    @Message(id = 140, value = "No host header in a HTTP/1.1 request")
+    IOException noHostInHttp11Request();
 }
