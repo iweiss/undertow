@@ -39,6 +39,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
+import io.undertow.protocols.http2.Http2Channel;
 import org.xnio.Buffers;
 import org.xnio.ChannelExceptionHandler;
 import org.xnio.ChannelListener;
@@ -145,6 +146,9 @@ public abstract class AbstractFramedChannel<C extends AbstractFramedChannel<C, R
      */
     private volatile boolean requireExplicitFlush = false;
     private volatile boolean readChannelDone = false;
+
+    // Defines the number of pending frames held before flushing them
+    private final int pendingFramesQueueSize = Integer.parseInt(System.getProperty("io.undertow.pending.frames.queue.size", "50"));
 
     private final ReferenceCountedPooled.FreeNotifier freeNotifier = new ReferenceCountedPooled.FreeNotifier() {
         @Override
@@ -709,6 +713,29 @@ public abstract class AbstractFramedChannel<C extends AbstractFramedChannel<C, R
             IoUtils.safeClose(channel);
             throw UndertowMessages.MESSAGES.channelIsClosed();
         }
+
+        if (this instanceof Http2Channel) {
+            if (pendingFrames.size() >= pendingFramesQueueSize) {
+                Deque<S> toBeDeletedFrames = new LinkedBlockingDeque<>(pendingFrames);
+
+                synchronized (this.channel) {
+                    UndertowLogger.ROOT_LOGGER.info("Clearing up pendingFrames...");
+                    UndertowLogger.ROOT_LOGGER.info("Suspending reads on channel " + this.channel.getSourceChannel().toString() + "...");
+                    this.channel.getSourceChannel().suspendReads();
+                    for (S frame : toBeDeletedFrames) {
+                        if (frame.isOpen() && frame.isReadyForFlush() && !frame.isLastFrame()) {
+                            UndertowLogger.ROOT_LOGGER.info("Flushing frame " + frame.toString());
+                            frame.flush();
+                            IoUtils.safeClose(frame);
+                            pendingFrames.remove(frame);
+                        }
+                    }
+                    UndertowLogger.ROOT_LOGGER.info("Resuming reads on channel " + this.channel.getSourceChannel().toString() + "...");
+                    this.channel.getSourceChannel().resumeReads();
+                }
+            }
+        }
+
         newFrames.add(channel);
 
         if (!requireExplicitFlush || channel.isBufferFull()) {
