@@ -715,7 +715,7 @@ public abstract class AbstractFramedChannel<C extends AbstractFramedChannel<C, R
         }
 
         if (this instanceof Http2Channel) {
-                synchronized (this.channel) {
+            synchronized (this.channel) {
                 if (pendingFrames.size() >= pendingFramesQueueSize) {
                     Deque<S> toBeDeletedFrames = new LinkedBlockingDeque<>(pendingFrames);
                     UndertowLogger.ROOT_LOGGER.tracef(
